@@ -29,7 +29,7 @@ EXAMPLE:
 """
 
 import numpy as np
-import pandas_ta as ta
+import ta as ta_lib
 from config import TIER_STRONG, TIER_NORMAL, TIER_WEAK, MTF_MAP
 from data_fetcher import fetch
 from indicators import IndicatorEngine
@@ -296,7 +296,7 @@ def compute_levels(df, atr_mult_sl=1.5, atr_mult_tp=2.5):
     This gives a Risk:Reward ratio of 1:1.67 by default.
     ATR adapts to volatility — volatile markets get wider stops.
     """
-    atr = ta.atr(df["high"], df["low"], df["close"], length=14)
+    atr = ta_lib.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
     if atr is None or atr.dropna().empty:
         return None
 
@@ -311,4 +311,5 @@ def compute_levels(df, atr_mult_sl=1.5, atr_mult_tp=2.5):
         "short_sl": round(price + atr_mult_sl * atr_v, 6),
         "short_tp": round(price - atr_mult_tp * atr_v, 6),
         "rr_ratio": round(atr_mult_tp / atr_mult_sl, 2),
+
     }
