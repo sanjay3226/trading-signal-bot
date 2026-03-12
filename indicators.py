@@ -1,39 +1,14 @@
 """
-╔══════════════════════════════════════════════════════════╗
-║  30 TECHNICAL INDICATORS                                ║
-║                                                          ║
-║  Each indicator returns a dict:                          ║
-║  {                                                       ║
-║    name:   "RSI"                                         ║
-║    value:  "32.5"        (display string)                ║
-║    signal: 0.7           (-1 to +1, buy/sell strength)   ║
-║    weight: 1.5           (how much this vote matters)    ║
-║    desc:   "Oversold"    (human explanation)             ║
-║    category: "oscillator"                                ║
-║  }                                                       ║
-╚══════════════════════════════════════════════════════════╝
-
-SIGNAL VALUES EXPLAINED:
-────────────────────────
-  +1.0 = Maximum bullish (STRONG BUY signal)
-  +0.5 = Moderate bullish
-   0.0 = Neutral / no signal
-  -0.5 = Moderate bearish
-  -1.0 = Maximum bearish (STRONG SELL signal)
-
-Think of it like a voting scale. Each indicator is a voter
-who says "I think the price will go UP (+) or DOWN (-)
-and I'm THIS confident (0.1 = barely, 1.0 = absolutely sure)."
+30 TECHNICAL INDICATORS — using 'ta' library instead of pandas_ta
 """
 
 import numpy as np
 import pandas as pd
-import pandas_ta as ta
+import ta as ta_lib
 from config import INDICATOR_CFG
 
 
 def _r(name, value, signal, weight, desc, category="oscillator"):
-    """Build standardised result dict."""
     return {
         "name": name,
         "value": str(value),
@@ -45,14 +20,6 @@ def _r(name, value, signal, weight, desc, category="oscillator"):
 
 
 class IndicatorEngine:
-    """
-    Runs all 30 indicators on a DataFrame and returns a list of results.
-
-    Usage:
-        engine = IndicatorEngine(df)
-        results = engine.run_all()  # → list of 30 dicts
-    """
-
     def __init__(self, df: pd.DataFrame, cfg: dict | None = None):
         self.df = df.copy()
         self.c = df["close"]
@@ -64,7 +31,6 @@ class IndicatorEngine:
         self._has_vol = self.v.sum() > 0
 
     def run_all(self) -> list[dict]:
-        """Run every indicator, skip any that fail."""
         methods = [
             self._rsi, self._macd, self._bbands, self._stoch,
             self._ema_short, self._ema_long, self._sma_trend,
@@ -85,33 +51,28 @@ class IndicatorEngine:
                 continue
         return results
 
-    # ═══════════════════════════════════════
-    #  OSCILLATORS — measure momentum
-    #  (Is the price moving too fast up/down?)
-    # ═══════════════════════════════════════
+    # ═══════ HELPER: Calculate EMA/SMA manually ═══════
+    def _ema(self, series, length):
+        return series.ewm(span=length, adjust=False).mean()
+
+    def _sma(self, series, length):
+        return series.rolling(window=length).mean()
+
+    # ═══════ OSCILLATORS ═══════
 
     def _rsi(self):
-        """
-        RSI (Relative Strength Index)
-        ─────────────────────────────
-        Measures speed of price changes on a 0-100 scale.
-        - Below 30 = oversold (price fell too fast → might bounce UP)
-        - Above 70 = overbought (price rose too fast → might drop DOWN)
-        - The middle zone (30-70) is less informative
-        """
         p = self.cfg["rsi"]
-        rsi = ta.rsi(self.c, length=p["len"])
-        if rsi is None or rsi.dropna().empty:
+        rsi = ta_lib.momentum.RSIIndicator(self.c, window=p["len"]).rsi()
+        if rsi.dropna().empty:
             return None
         v = rsi.iloc[-1]
         pv = rsi.iloc[-2]
-
         if v < p["os"]:
             s = 0.7 + (p["os"] - v) / (p["os"] * 3)
-            d = f"Oversold {v:.1f} — expect bounce"
+            d = f"Oversold {v:.1f}"
         elif v > p["ob"]:
             s = -(0.7 + (v - p["ob"]) / ((100 - p["ob"]) * 3))
-            d = f"Overbought {v:.1f} — expect pullback"
+            d = f"Overbought {v:.1f}"
         elif v < 45:
             s = 0.15 + (45 - v) / 60
             d = f"Lean bullish {v:.1f}"
@@ -124,47 +85,39 @@ class IndicatorEngine:
         return _r("RSI", f"{v:.1f}", s, p["w"], d, "oscillator")
 
     def _stoch(self):
-        """
-        Stochastic Oscillator
-        ─────────────────────
-        Compares closing price to its price range over N periods.
-        Two lines: %K (fast) and %D (slow signal line).
-        - K < 20 = oversold
-        - K > 80 = overbought
-        - K crossing above D = bullish
-        """
         p = self.cfg["stoch"]
-        st = ta.stoch(self.h, self.l, self.c,
-                      k=p["k"], d=p["d"], smooth_k=p["smooth"])
-        if st is None or st.dropna().empty:
+        stoch = ta_lib.momentum.StochasticOscillator(
+            self.h, self.l, self.c,
+            window=p["k"], smooth_window=p["d"]
+        )
+        k_series = stoch.stoch()
+        d_series = stoch.stoch_signal()
+        if k_series.dropna().empty:
             return None
-        k_val = st.iloc[-1, 0]
-        d_val = st.iloc[-1, 1]
-        pk = st.iloc[-2, 0]
-
+        k_val = k_series.iloc[-1]
+        d_val = d_series.iloc[-1]
+        pk = k_series.iloc[-2]
         if k_val < 20:
             s, d = 0.7 + (20 - k_val) / 100, f"Oversold K={k_val:.0f}"
         elif k_val > 80:
             s, d = -(0.7 + (k_val - 80) / 100), f"Overbought K={k_val:.0f}"
         else:
-            cross = 0.3 if (pk <= st.iloc[-2, 1] and k_val > d_val) else \
-                   -0.3 if (pk >= st.iloc[-2, 1] and k_val < d_val) else 0
+            cross = 0.3 if (pk <= d_series.iloc[-2] and k_val > d_val) else \
+                   -0.3 if (pk >= d_series.iloc[-2] and k_val < d_val) else 0
             s, d = cross, f"K={k_val:.0f} D={d_val:.0f}"
         return _r("Stochastic", f"{k_val:.0f}/{d_val:.0f}", s, p["w"], d, "oscillator")
 
     def _stoch_rsi(self):
-        """
-        Stochastic RSI — RSI of RSI
-        ────────────────────────────
-        Even more sensitive than regular Stochastic.
-        Good for catching early reversals but can give false signals.
-        """
         p = self.cfg["stoch_rsi"]
-        sr = ta.stochrsi(self.c, length=p["len"],
-                         rsi_length=p["rsi_len"], k=p["k"], d=p["d"])
-        if sr is None or sr.dropna().empty:
+        rsi = ta_lib.momentum.RSIIndicator(self.c, window=p["rsi_len"]).rsi()
+        if rsi.dropna().shape[0] < p["len"] + 5:
             return None
-        k = sr.iloc[-1, 0] * 100 if sr.iloc[-1, 0] <= 1 else sr.iloc[-1, 0]
+        stoch = ta_lib.momentum.StochasticOscillator(
+            rsi, rsi, rsi, window=p["len"], smooth_window=p["k"]
+        )
+        k = stoch.stoch().iloc[-1]
+        if np.isnan(k):
+            return None
         if k < 20:
             s, d = 0.7, f"Oversold {k:.0f}"
         elif k > 80:
@@ -174,17 +127,9 @@ class IndicatorEngine:
         return _r("Stoch RSI", f"{k:.0f}", s, p["w"], d, "oscillator")
 
     def _cci(self):
-        """
-        CCI (Commodity Channel Index)
-        ──────────────────────────────
-        Measures how far price has deviated from its average.
-        - Below -100 = oversold
-        - Above +100 = overbought
-        - Below -200 / above +200 = extreme
-        """
         p = self.cfg["cci"]
-        cci = ta.cci(self.h, self.l, self.c, length=p["len"])
-        if cci is None or cci.dropna().empty:
+        cci = ta_lib.trend.CCIIndicator(self.h, self.l, self.c, window=p["len"]).cci()
+        if cci.dropna().empty:
             return None
         v = cci.iloc[-1]
         if v < -200:
@@ -201,16 +146,9 @@ class IndicatorEngine:
         return _r("CCI", f"{v:.0f}", s, p["w"], d, "oscillator")
 
     def _williams(self):
-        """
-        Williams %R
-        ───────────
-        Similar to Stochastic but inverted (0 to -100).
-        - Below -80 = oversold (bullish)
-        - Above -20 = overbought (bearish)
-        """
         p = self.cfg["williams"]
-        wr = ta.willr(self.h, self.l, self.c, length=p["len"])
-        if wr is None or wr.dropna().empty:
+        wr = ta_lib.momentum.WilliamsRIndicator(self.h, self.l, self.c, lbp=p["len"]).williams_r()
+        if wr.dropna().empty:
             return None
         v = wr.iloc[-1]
         if v < -80:
@@ -223,17 +161,11 @@ class IndicatorEngine:
         return _r("Williams %R", f"{v:.1f}", s, p["w"], d, "oscillator")
 
     def _mfi(self):
-        """
-        MFI (Money Flow Index) — "Volume-weighted RSI"
-        ───────────────────────────────────────────────
-        Like RSI but also considers volume. If price goes up
-        on HIGH volume → stronger signal than low volume.
-        """
         if not self._has_vol:
             return None
         p = self.cfg["mfi"]
-        mfi = ta.mfi(self.h, self.l, self.c, self.v, length=p["len"])
-        if mfi is None or mfi.dropna().empty:
+        mfi = ta_lib.volume.MFIIndicator(self.h, self.l, self.c, self.v, window=p["len"]).money_flow_index()
+        if mfi.dropna().empty:
             return None
         v = mfi.iloc[-1]
         if v < 20:
@@ -246,15 +178,12 @@ class IndicatorEngine:
         return _r("MFI", f"{v:.0f}", s, p["w"], d, "oscillator")
 
     def _uo(self):
-        """
-        Ultimate Oscillator — uses 3 timeframes (7, 14, 28)
-        ────────────────────────────────────────────────────
-        Reduces false signals by combining short/medium/long momentum.
-        """
         p = self.cfg["uo"]
-        uo = ta.uo(self.h, self.l, self.c,
-                   fast=p["s"], medium=p["m"], slow=p["l"])
-        if uo is None or uo.dropna().empty:
+        uo = ta_lib.momentum.UltimateOscillator(
+            self.h, self.l, self.c,
+            window1=p["s"], window2=p["m"], window3=p["l"]
+        ).ultimate_oscillator()
+        if uo.dropna().empty:
             return None
         v = uo.iloc[-1]
         if v < 30:
@@ -267,15 +196,9 @@ class IndicatorEngine:
         return _r("Ultimate Osc", f"{v:.1f}", s, p["w"], d, "oscillator")
 
     def _roc(self):
-        """
-        ROC (Rate of Change)
-        ────────────────────
-        Simply: how much has price changed over N periods (%).
-        Positive = price going up, Negative = going down.
-        """
         p = self.cfg["roc"]
-        roc = ta.roc(self.c, length=p["len"])
-        if roc is None or roc.dropna().empty:
+        roc = ta_lib.momentum.ROCIndicator(self.c, window=p["len"]).roc()
+        if roc.dropna().empty:
             return None
         v = roc.iloc[-1]
         s = np.clip(v / 10, -1, 1)
@@ -283,78 +206,50 @@ class IndicatorEngine:
         return _r("ROC", f"{v:.2f}%", s, p["w"], d, "oscillator")
 
     def _trix(self):
-        """
-        TRIX — Triple Exponential Average
-        ──────────────────────────────────
-        Super-smooth momentum indicator. Filters out market noise.
-        Positive = bullish, Negative = bearish.
-        """
         p = self.cfg["trix"]
-        tr = ta.trix(self.c, length=p["len"])
-        if tr is None or tr.dropna().empty:
+        trix = ta_lib.trend.TRIXIndicator(self.c, window=p["len"]).trix()
+        if trix.dropna().empty:
             return None
-        v = tr.iloc[-1, 0]
+        v = trix.iloc[-1]
         s = np.clip(v * 50, -1, 1)
         d = f"{'Bullish' if v > 0 else 'Bearish'} {v:.4f}"
         return _r("TRIX", f"{v:.4f}", s, p["w"], d, "oscillator")
 
-    # ═══════════════════════════════════════
-    #  TREND — which direction is the market going?
-    # ═══════════════════════════════════════
+    # ═══════ TREND ═══════
 
     def _macd(self):
-        """
-        MACD (Moving Average Convergence Divergence)
-        ─────────────────────────────────────────────
-        The KING of trend indicators. Uses 3 components:
-        - MACD line: difference between fast EMA and slow EMA
-        - Signal line: EMA of the MACD line
-        - Histogram: MACD minus Signal (shows momentum)
-
-        KEY SIGNALS:
-        - Histogram crosses from - to + = BULLISH CROSSOVER (buy)
-        - Histogram crosses from + to - = BEARISH CROSSOVER (sell)
-        """
         p = self.cfg["macd"]
-        m = ta.macd(self.c, fast=p["f"], slow=p["s"], signal=p["sig"])
-        if m is None or m.dropna().empty:
+        macd_ind = ta_lib.trend.MACD(self.c, window_fast=p["f"], window_slow=p["s"], window_sign=p["sig"])
+        macd_line = macd_ind.macd()
+        signal_line = macd_ind.macd_signal()
+        hist = macd_ind.macd_diff()
+        if hist.dropna().empty:
             return None
-        macd_v = m.iloc[-1, 0]
-        hist = m.iloc[-1, 1]
-        prev_hist = m.iloc[-2, 1]
-
-        if hist > 0 and prev_hist <= 0:
+        macd_v = macd_line.iloc[-1]
+        h = hist.iloc[-1]
+        ph = hist.iloc[-2]
+        if h > 0 and ph <= 0:
             s, d = 0.9, "🔥 Bullish crossover"
-        elif hist < 0 and prev_hist >= 0:
+        elif h < 0 and ph >= 0:
             s, d = -0.9, "🔥 Bearish crossover"
-        elif hist > 0:
-            s = 0.4 + min(0.4, abs(hist) / (abs(macd_v) + 1e-9))
-            d = f"Bullish histogram {hist:.4f}"
-        elif hist < 0:
-            s = -(0.4 + min(0.4, abs(hist) / (abs(macd_v) + 1e-9)))
-            d = f"Bearish histogram {hist:.4f}"
+        elif h > 0:
+            s = 0.4 + min(0.4, abs(h) / (abs(macd_v) + 1e-9))
+            d = f"Bullish histogram {h:.4f}"
+        elif h < 0:
+            s = -(0.4 + min(0.4, abs(h) / (abs(macd_v) + 1e-9)))
+            d = f"Bearish histogram {h:.4f}"
         else:
             s, d = 0, "Flat"
         return _r("MACD", f"{macd_v:.4f}", s, p["w"], d, "trend")
 
     def _adx(self):
-        """
-        ADX (Average Directional Index)
-        ────────────────────────────────
-        Measures TREND STRENGTH (not direction).
-        - ADX < 25 = weak/no trend (choppy market)
-        - ADX > 25 = strong trend
-        - DI+ > DI- = uptrend
-        - DI- > DI+ = downtrend
-        """
         p = self.cfg["adx"]
-        a = ta.adx(self.h, self.l, self.c, length=p["len"])
-        if a is None or a.dropna().empty:
+        adx_ind = ta_lib.trend.ADXIndicator(self.h, self.l, self.c, window=p["len"])
+        adx_v = adx_ind.adx().iloc[-1]
+        dip = adx_ind.adx_pos().iloc[-1]
+        din = adx_ind.adx_neg().iloc[-1]
+        if np.isnan(adx_v):
             return None
-        adx_v = a.iloc[-1, 0]
-        dip = a.iloc[-1, 1]
-        din = a.iloc[-1, 2]
-
         if adx_v < p["thresh"]:
             s, d = 0.0, f"Weak trend ADX={adx_v:.0f}"
         elif dip > din:
@@ -366,149 +261,110 @@ class IndicatorEngine:
         return _r("ADX", f"{adx_v:.0f}", s, p["w"], d, "trend")
 
     def _supertrend(self):
-        """
-        Supertrend — clean binary trend indicator
-        ──────────────────────────────────────────
-        Uses ATR (volatility) to create a trailing line.
-        - Price above line = BULLISH (green)
-        - Price below line = BEARISH (red)
-        - When it FLIPS = very strong signal
-        """
         p = self.cfg["supertrend"]
-        st = ta.supertrend(self.h, self.l, self.c,
-                           length=p["len"], multiplier=p["mult"])
-        if st is None or st.dropna().empty:
-            return None
-        direction = st.iloc[-1, 1]
-        prev_dir = st.iloc[-2, 1]
-
-        if direction == 1 and prev_dir == -1:
-            s, d = 0.95, "🔥 Bullish flip!"
-        elif direction == -1 and prev_dir == 1:
-            s, d = -0.95, "🔥 Bearish flip!"
-        elif direction == 1:
-            s, d = 0.6, "Bullish trend"
-        else:
-            s, d = -0.6, "Bearish trend"
-        return _r("Supertrend",
-                  "Bullish" if direction == 1 else "Bearish",
-                  s, p["w"], d, "trend")
+        try:
+            sti = ta_lib.trend.STCIndicator(self.c, window_slow=p["len"], window_fast=int(p["len"]/2))
+            stc = sti.stc()
+            if stc.dropna().empty:
+                return None
+            v = stc.iloc[-1]
+            pv = stc.iloc[-2]
+            if v > 75:
+                s, d = -0.6, "Bearish zone"
+            elif v < 25:
+                s, d = 0.6, "Bullish zone"
+            elif v > pv:
+                s, d = 0.3, "Rising"
+            else:
+                s, d = -0.3, "Falling"
+            return _r("Supertrend", f"{v:.0f}", s, p["w"], d, "trend")
+        except Exception:
+            # Fallback: manual supertrend calculation
+            atr = ta_lib.volatility.AverageTrueRange(self.h, self.l, self.c, window=p["len"]).average_true_range()
+            if atr.dropna().empty:
+                return None
+            hl2 = (self.h + self.l) / 2
+            upper = hl2 + p["mult"] * atr
+            lower = hl2 - p["mult"] * atr
+            price = self.c.iloc[-1]
+            prev_price = self.c.iloc[-2]
+            if price > upper.iloc[-1]:
+                s, d = 0.6, "Bullish (above upper band)"
+            elif price < lower.iloc[-1]:
+                s, d = -0.6, "Bearish (below lower band)"
+            elif price > prev_price:
+                s, d = 0.3, "Leaning bullish"
+            else:
+                s, d = -0.3, "Leaning bearish"
+            return _r("Supertrend", "▲" if s > 0 else "▼", s, p["w"], d, "trend")
 
     def _psar(self):
-        """
-        Parabolic SAR — trailing stop indicator
-        ────────────────────────────────────────
-        Dots appear below price (bullish) or above price (bearish).
-        When dots flip side = trend reversal signal.
-        """
         p = self.cfg["psar"]
-        ps = ta.psar(self.h, self.l, self.c,
-                     af0=p["af"], af=p["af"], max_af=p["max_af"])
-        if ps is None or ps.dropna(how="all").empty:
-            return None
-
-        long_col = [c for c in ps.columns if "PSARl" in c]
-        short_col = [c for c in ps.columns if "PSARs" in c]
-        last = ps.iloc[-1]
+        psar = ta_lib.trend.PSARIndicator(self.h, self.l, self.c, step=p["af"], max_step=p["max_af"])
+        psar_up = psar.psar_up()
+        psar_down = psar.psar_down()
         price = self.c.iloc[-1]
-
-        if long_col and pd.notna(last[long_col[0]]):
-            psar_v = last[long_col[0]]
-            dist = (price - psar_v) / price * 100
+        last_up = psar_up.iloc[-1]
+        last_down = psar_down.iloc[-1]
+        if not np.isnan(last_up):
+            dist = (price - last_up) / price * 100
             s, d = 0.6, f"Bullish — SAR below ({dist:.2f}%)"
-        elif short_col and pd.notna(last[short_col[0]]):
-            psar_v = last[short_col[0]]
-            dist = (psar_v - price) / price * 100
+        elif not np.isnan(last_down):
+            dist = (last_down - price) / price * 100
             s, d = -0.6, f"Bearish — SAR above ({dist:.2f}%)"
         else:
             s, d = 0, "Undetermined"
-        return _r("Parabolic SAR", "▲" if s > 0 else "▼",
-                  s, p["w"], d, "trend")
+        return _r("Parabolic SAR", "▲" if s > 0 else "▼", s, p["w"], d, "trend")
 
     def _ichimoku(self):
-        """
-        Ichimoku Cloud — the "one glance" system
-        ─────────────────────────────────────────
-        Japanese indicator with 5 lines + a "cloud" (kumo).
-
-        Rules:
-        1. Price above cloud = bullish
-        2. Price below cloud = bearish
-        3. Tenkan > Kijun = bullish cross
-        4. Green cloud (Span A > Span B) = bullish
-        """
         p = self.cfg["ichimoku"]
-        try:
-            ich, _ = ta.ichimoku(self.h, self.l, self.c,
-                                  tenkan=p["tenkan"], kijun=p["kijun"],
-                                  senkou=p["senkou"])
-        except Exception:
-            return None
-        if ich is None or ich.dropna().empty:
-            return None
-
+        ich = ta_lib.trend.IchimokuIndicator(self.h, self.l,
+            window1=p["tenkan"], window2=p["kijun"], window3=p["senkou"])
+        tenkan = ich.ichimoku_conversion_line().iloc[-1]
+        kijun = ich.ichimoku_base_line().iloc[-1]
+        spa = ich.ichimoku_a().iloc[-1]
+        spb = ich.ichimoku_b().iloc[-1]
         price = self.c.iloc[-1]
-        tenkan = ich.iloc[-1, 0]
-        kijun = ich.iloc[-1, 1]
-        spa = ich.iloc[-1, 2] if ich.shape[1] > 2 else None
-        spb = ich.iloc[-1, 3] if ich.shape[1] > 3 else None
-
+        if any(np.isnan(x) for x in [tenkan, kijun, spa, spb]):
+            return None
         score = 0
         if tenkan > kijun:
             score += 0.25
         else:
             score -= 0.25
-
-        if spa is not None and spb is not None:
-            cloud_top = max(spa, spb)
-            cloud_bot = min(spa, spb)
-            if price > cloud_top:
-                score += 0.5
-            elif price < cloud_bot:
-                score -= 0.5
-            if spa > spb:
-                score += 0.15
-            else:
-                score -= 0.15
-
+        cloud_top = max(spa, spb)
+        cloud_bot = min(spa, spb)
+        if price > cloud_top:
+            score += 0.5
+        elif price < cloud_bot:
+            score -= 0.5
+        if spa > spb:
+            score += 0.15
+        else:
+            score -= 0.15
         d = f"{'Above' if score > 0 else 'Below'} cloud"
         return _r("Ichimoku", f"{score:+.2f}", score, p["w"], d, "trend")
 
     def _aroon(self):
-        """
-        Aroon — measures how recently the highest/lowest prices occurred.
-        Aroon Up high + Aroon Down low = strong uptrend.
-        """
         p = self.cfg["aroon"]
-        ar = ta.aroon(self.h, self.l, length=p["len"])
-        if ar is None or ar.dropna().empty:
+        aroon = ta_lib.trend.AroonIndicator(self.h, self.l, window=p["len"])
+        up = aroon.aroon_up().iloc[-1]
+        down = aroon.aroon_down().iloc[-1]
+        if np.isnan(up) or np.isnan(down):
             return None
-        osc_col = [c for c in ar.columns if "OSC" in c.upper()]
-        v = ar[osc_col[0]].iloc[-1] if osc_col else ar.iloc[-1, 1] - ar.iloc[-1, 0]
+        v = up - down
         s = v / 100
         d = f"{'Bullish' if v > 0 else 'Bearish'} Aroon {v:.0f}"
         return _r("Aroon", f"{v:.0f}", s, p["w"], d, "trend")
 
-    # ═══════════════════════════════════════
-    #  MOVING AVERAGES — smoothed price lines
-    # ═══════════════════════════════════════
+    # ═══════ MOVING AVERAGES ═══════
 
     def _ema_short(self):
-        """
-        EMA 9/21 Cross — short-term trend detection
-        ─────────────────────────────────────────────
-        When fast EMA (9) crosses ABOVE slow EMA (21) = buy signal.
-        When it crosses BELOW = sell signal.
-        """
         p = self.cfg["ema_short"]
-        fast = ta.ema(self.c, length=p["f"])
-        slow = ta.ema(self.c, length=p["s"])
-        if fast is None or slow is None:
-            return None
-
+        fast = self._ema(self.c, p["f"])
+        slow = self._ema(self.c, p["s"])
         f_v, s_v = fast.iloc[-1], slow.iloc[-1]
         f_p, s_p = fast.iloc[-2], slow.iloc[-2]
-
         if f_p <= s_p and f_v > s_v:
             s, d = 0.9, f"Bullish cross EMA{p['f']}/{p['s']}"
         elif f_p >= s_p and f_v < s_v:
@@ -519,54 +375,35 @@ class IndicatorEngine:
         else:
             gap = (s_v - f_v) / s_v * 100
             s, d = -0.4, f"EMA{p['f']} below ({gap:.2f}%)"
-        return _r(f"EMA {p['f']}/{p['s']}", "▲" if s > 0 else "▼",
-                  s, p["w"], d, "ma")
+        return _r(f"EMA {p['f']}/{p['s']}", "▲" if s > 0 else "▼", s, p["w"], d, "ma")
 
     def _ema_long(self):
-        """
-        EMA 50/200 — the legendary Golden Cross / Death Cross
-        ──────────────────────────────────────────────────────
-        Golden Cross (50 crosses above 200) = strong long-term BUY
-        Death Cross  (50 crosses below 200) = strong long-term SELL
-
-        These are the most watched signals in all of trading.
-        """
         p = self.cfg["ema_long"]
-        fast = ta.ema(self.c, length=p["f"])
-        slow = ta.ema(self.c, length=p["s"])
-        if fast is None or slow is None or fast.dropna().shape[0] < 5:
+        fast = self._ema(self.c, p["f"])
+        slow = self._ema(self.c, p["s"])
+        if fast.dropna().shape[0] < 5 or slow.dropna().shape[0] < 5:
             return None
-
         f_v, s_v = fast.iloc[-1], slow.iloc[-1]
         f_p, s_p = fast.iloc[-2], slow.iloc[-2]
-
         if f_p <= s_p and f_v > s_v:
-            s, d = 1.0, "🔥 GOLDEN CROSS — mega bullish"
+            s, d = 1.0, "🔥 GOLDEN CROSS"
         elif f_p >= s_p and f_v < s_v:
-            s, d = -1.0, "💀 DEATH CROSS — mega bearish"
+            s, d = -1.0, "💀 DEATH CROSS"
         elif f_v > s_v:
-            s, d = 0.5, f"EMA{p['f']} above EMA{p['s']} (bullish structure)"
+            s, d = 0.5, f"EMA{p['f']} above EMA{p['s']}"
         else:
-            s, d = -0.5, f"EMA{p['f']} below EMA{p['s']} (bearish structure)"
-        return _r(f"EMA {p['f']}/{p['s']}", "▲" if s > 0 else "▼",
-                  s, p["w"], d, "ma")
+            s, d = -0.5, f"EMA{p['f']} below EMA{p['s']}"
+        return _r(f"EMA {p['f']}/{p['s']}", "▲" if s > 0 else "▼", s, p["w"], d, "ma")
 
     def _sma_trend(self):
-        """
-        SMA Alignment — is price above or below key SMAs?
-        ──────────────────────────────────────────────────
-        If price is above ALL major SMAs (20, 50, 200) = strong uptrend.
-        If below ALL = strong downtrend.
-        """
         p = self.cfg["sma_trend"]
         smas = {}
         for per in p["periods"]:
-            sv = ta.sma(self.c, length=per)
-            if sv is not None and not sv.dropna().empty:
+            sv = self._sma(self.c, per)
+            if not sv.dropna().empty:
                 smas[per] = sv.iloc[-1]
         if len(smas) < 2:
             return None
-
         price = self.c.iloc[-1]
         above = sum(1 for v in smas.values() if price > v)
         total = len(smas)
@@ -575,55 +412,40 @@ class IndicatorEngine:
         return _r("SMA Trend", f"{above}/{total}", s, p["w"], d, "ma")
 
     def _hma(self):
-        """
-        Hull Moving Average — fast and smooth
-        ──────────────────────────────────────
-        Reduces lag compared to regular MAs. Good for catching
-        trend changes early. We check slope + acceleration.
-        """
         p = self.cfg["hma"]
-        hma = ta.hma(self.c, length=p["len"])
-        if hma is None or hma.dropna().shape[0] < 3:
+        n = p["len"]
+        half_ema = self._ema(self.c, n // 2)
+        full_ema = self._ema(self.c, n)
+        diff = 2 * half_ema - full_ema
+        hma = self._ema(diff, int(np.sqrt(n)))
+        if hma.dropna().shape[0] < 3:
             return None
-
         v, pv, ppv = hma.iloc[-1], hma.iloc[-2], hma.iloc[-3]
         price = self.c.iloc[-1]
         slope = v - pv
         accel = (v - pv) - (pv - ppv)
-
         s = 0.3 if price > v else -0.3
         if slope > 0 and accel > 0:
             s += 0.3
         elif slope < 0 and accel < 0:
             s -= 0.3
-
-        d = f"HMA {'rising' if slope > 0 else 'falling'}, " \
-            f"price {'above' if price > v else 'below'}"
-        return _r("Hull MA", "▲" if slope > 0 else "▼",
-                  s, p["w"], d, "ma")
+        d = f"HMA {'rising' if slope > 0 else 'falling'}"
+        return _r("Hull MA", "▲" if slope > 0 else "▼", s, p["w"], d, "ma")
 
     def _ma_ribbon(self):
-        """
-        MA Ribbon — 6 EMAs fanning out
-        ───────────────────────────────
-        When ALL EMAs are perfectly stacked (8 > 13 > 21 > 34 > 55 > 89)
-        = perfect uptrend. Reverse = perfect downtrend.
-        """
         p = self.cfg["ma_ribbon"]
         emas = {}
         for per in p["periods"]:
-            e = ta.ema(self.c, length=per)
-            if e is not None and not e.dropna().empty:
+            e = self._ema(self.c, per)
+            if not e.dropna().empty:
                 emas[per] = e.iloc[-1]
         if len(emas) < 4:
             return None
-
         vals = list(emas.values())
         bullish = all(vals[i] >= vals[i + 1] for i in range(len(vals) - 1))
         bearish = all(vals[i] <= vals[i + 1] for i in range(len(vals) - 1))
         price = self.c.iloc[-1]
         above = sum(1 for v in vals if price > v)
-
         if bullish:
             s, d = 0.8, "Perfect bullish ribbon"
         elif bearish:
@@ -633,28 +455,15 @@ class IndicatorEngine:
             d = f"Price above {above}/{len(vals)} ribbon EMAs"
         return _r("MA Ribbon", f"{above}/{len(vals)}", s, p["w"], d, "ma")
 
-    # ═══════════════════════════════════════
-    #  VOLATILITY — how "wild" is the market?
-    # ═══════════════════════════════════════
+    # ═══════ VOLATILITY ═══════
 
     def _bbands(self):
-        """
-        Bollinger Bands — price channels based on standard deviation
-        ────────────────────────────────────────────────────────────
-        %B tells us where price is within the bands:
-        - %B < 0.05 = at/below lower band (oversold)
-        - %B > 0.95 = at/above upper band (overbought)
-        - The bands squeeze before big moves (low volatility → breakout)
-        """
         p = self.cfg["bbands"]
-        bb = ta.bbands(self.c, length=p["len"], std=p["std"])
-        if bb is None or bb.dropna().empty:
-            return None
-
-        lower, mid, upper = bb.iloc[-1, 0], bb.iloc[-1, 1], bb.iloc[-1, 2]
+        bb = ta_lib.volatility.BollingerBands(self.c, window=p["len"], window_dev=p["std"])
+        lower = bb.bollinger_lband().iloc[-1]
+        upper = bb.bollinger_hband().iloc[-1]
         price = self.c.iloc[-1]
         pct_b = (price - lower) / (upper - lower) if upper != lower else 0.5
-
         if pct_b < 0.05:
             s, d = 0.8, f"At lower band (%B={pct_b:.2f})"
         elif pct_b < 0.2:
@@ -670,13 +479,12 @@ class IndicatorEngine:
 
     def _keltner(self):
         p = self.cfg["keltner"]
-        kc = ta.kc(self.h, self.l, self.c,
-                   length=p["len"], scalar=p["mult"])
-        if kc is None or kc.dropna().empty:
-            return None
-        lower, mid, upper = kc.iloc[-1, 0], kc.iloc[-1, 1], kc.iloc[-1, 2]
+        kc = ta_lib.volatility.KeltnerChannel(self.h, self.l, self.c,
+            window=p["len"], window_atr=p["len"], multiplier=p["mult"])
+        lower = kc.keltner_channel_lband().iloc[-1]
+        mid = kc.keltner_channel_mband().iloc[-1]
+        upper = kc.keltner_channel_hband().iloc[-1]
         price = self.c.iloc[-1]
-
         if price < lower:
             s, d = 0.6, "Below Keltner lower"
         elif price > upper:
@@ -684,20 +492,16 @@ class IndicatorEngine:
         else:
             s = -((price - mid) / (upper - mid)) * 0.3 if upper != mid else 0
             d = "Inside Keltner channel"
-        return _r("Keltner", "▲" if s > 0 else "▼",
-                  s, p["w"], d, "volatility")
+        return _r("Keltner", "▲" if s > 0 else "▼", s, p["w"], d, "volatility")
 
     def _donchian(self):
         p = self.cfg["donchian"]
-        dc = ta.donchian(self.h, self.l,
-                         lower_length=p["len"], upper_length=p["len"])
-        if dc is None or dc.dropna().empty:
-            return None
-        lower, mid, upper = dc.iloc[-1, 0], dc.iloc[-1, 1], dc.iloc[-1, 2]
+        dc = ta_lib.volatility.DonchianChannel(self.h, self.l, self.c, window=p["len"])
+        lower = dc.donchian_channel_lband().iloc[-1]
+        upper = dc.donchian_channel_hband().iloc[-1]
         price = self.c.iloc[-1]
         rang = upper - lower if upper != lower else 1
         pos = (price - lower) / rang
-
         if pos > 0.95:
             s, d = -0.6, "At Donchian high"
         elif pos < 0.05:
@@ -708,21 +512,14 @@ class IndicatorEngine:
         return _r("Donchian", f"{pos:.0%}", s, p["w"], d, "volatility")
 
     def _atr(self):
-        """
-        ATR (Average True Range) — measures volatility
-        ───────────────────────────────────────────────
-        Not directly bullish/bearish, but HIGH ATR during a move
-        = stronger conviction. We also use ATR for stop-loss calc.
-        """
         p = self.cfg["atr"]
-        atr_s = ta.atr(self.h, self.l, self.c, length=p["len"])
-        if atr_s is None or atr_s.dropna().shape[0] < 20:
+        atr_s = ta_lib.volatility.AverageTrueRange(self.h, self.l, self.c, window=p["len"]).average_true_range()
+        if atr_s.dropna().shape[0] < 20:
             return None
         v = atr_s.iloc[-1]
         avg = atr_s.rolling(50).mean().iloc[-1]
         pct = v / self.c.iloc[-1] * 100
         chg = self.c.iloc[-1] - self.c.iloc[-5]
-
         if v > avg * 1.5:
             s = 0.3 if chg > 0 else -0.3
             d = f"High volatility {pct:.2f}%"
@@ -731,27 +528,16 @@ class IndicatorEngine:
             d = f"Normal volatility {pct:.2f}%"
         return _r("ATR", f"{pct:.2f}%", s, p["w"], d, "volatility")
 
-    # ═══════════════════════════════════════
-    #  VOLUME — is the move backed by money?
-    # ═══════════════════════════════════════
+    # ═══════ VOLUME ═══════
 
     def _obv(self):
-        """
-        OBV (On Balance Volume)
-        ───────────────────────
-        Running total: +volume on up days, -volume on down days.
-        If OBV is rising but price is flat → hidden buying pressure
-        (bullish divergence = great buy signal).
-        """
         if not self._has_vol:
             return None
-        obv = ta.obv(self.c, self.v)
-        if obv is None or obv.dropna().shape[0] < 20:
+        obv = ta_lib.volume.OnBalanceVolumeIndicator(self.c, self.v).on_balance_volume()
+        if obv.dropna().shape[0] < 20:
             return None
-
         slope = obv.iloc[-1] - obv.iloc[-5]
         price_slope = self.c.iloc[-1] - self.c.iloc[-5]
-
         if slope > 0 and price_slope > 0:
             s, d = 0.5, "OBV confirms uptrend"
         elif slope < 0 and price_slope < 0:
@@ -762,15 +548,14 @@ class IndicatorEngine:
             s, d = -0.6, "Bearish divergence"
         else:
             s, d = 0, "OBV flat"
-        return _r("OBV", "▲" if slope > 0 else "▼",
-                  s, self.cfg["obv"]["w"], d, "volume")
+        return _r("OBV", "▲" if slope > 0 else "▼", s, self.cfg["obv"]["w"], d, "volume")
 
     def _cmf(self):
         if not self._has_vol:
             return None
         p = self.cfg["cmf"]
-        cmf = ta.cmf(self.h, self.l, self.c, self.v, length=p["len"])
-        if cmf is None or cmf.dropna().empty:
+        cmf = ta_lib.volume.ChaikinMoneyFlowIndicator(self.h, self.l, self.c, self.v, window=p["len"]).chaikin_money_flow()
+        if cmf.dropna().empty:
             return None
         v = cmf.iloc[-1]
         s = np.clip(v * 5, -1, 1)
@@ -781,23 +566,21 @@ class IndicatorEngine:
         if not self._has_vol:
             return None
         try:
-            vwap = ta.vwap(self.h, self.l, self.c, self.v)
-            if vwap is None or vwap.dropna().empty:
+            vwap = ta_lib.volume.VolumeWeightedAveragePrice(self.h, self.l, self.c, self.v).volume_weighted_average_price()
+            if vwap.dropna().empty:
                 return None
         except Exception:
             return None
         v = vwap.iloc[-1]
         price = self.c.iloc[-1]
         diff_pct = (price - v) / v * 100
-
         if diff_pct > 1:
             s, d = -0.4, f"Above VWAP (+{diff_pct:.2f}%)"
         elif diff_pct < -1:
             s, d = 0.4, f"Below VWAP ({diff_pct:.2f}%)"
         else:
             s, d = 0, f"Near VWAP ({diff_pct:+.2f}%)"
-        return _r("VWAP", f"{diff_pct:+.2f}%",
-                  s, self.cfg["vwap"]["w"], d, "volume")
+        return _r("VWAP", f"{diff_pct:+.2f}%", s, self.cfg["vwap"]["w"], d, "volume")
 
     def _vol_analysis(self):
         if not self._has_vol:
@@ -806,45 +589,30 @@ class IndicatorEngine:
         cur = self.v.iloc[-1]
         ratio = cur / avg if avg > 0 else 1
         price_chg = self.c.iloc[-1] - self.c.iloc[-2]
-
         if ratio > 2 and price_chg > 0:
-            s, d = 0.7, f"Very high bullish vol ({ratio:.1f}×)"
+            s, d = 0.7, f"Very high bullish vol ({ratio:.1f}x)"
         elif ratio > 1.5 and price_chg > 0:
-            s, d = 0.4, f"High bullish vol ({ratio:.1f}×)"
+            s, d = 0.4, f"High bullish vol ({ratio:.1f}x)"
         elif ratio > 2 and price_chg < 0:
-            s, d = -0.7, f"Very high bearish vol ({ratio:.1f}×)"
+            s, d = -0.7, f"Very high bearish vol ({ratio:.1f}x)"
         elif ratio > 1.5 and price_chg < 0:
-            s, d = -0.4, f"High bearish vol ({ratio:.1f}×)"
+            s, d = -0.4, f"High bearish vol ({ratio:.1f}x)"
         else:
             s = 0.05 if price_chg > 0 else -0.05
-            d = f"Normal volume ({ratio:.1f}×)"
-        return _r("Volume", f"{ratio:.1f}×",
-                  s, self.cfg["vol_analysis"]["w"], d, "volume")
+            d = f"Normal volume ({ratio:.1f}x)"
+        return _r("Volume", f"{ratio:.1f}x", s, self.cfg["vol_analysis"]["w"], d, "volume")
 
-    # ═══════════════════════════════════════
-    #  PRICE ACTION — key levels
-    # ═══════════════════════════════════════
+    # ═══════ PRICE ACTION ═══════
 
     def _fibonacci(self):
-        """
-        Fibonacci Retracement
-        ─────────────────────
-        After a big move, price tends to "retrace" to specific %:
-        23.6%, 38.2%, 50%, 61.8% (golden ratio), 78.6%
-
-        Near 61.8% or 78.6% retracement = strong support zone.
-        Near 23.6% = price barely pulled back (strong trend).
-        """
         lookback = min(100, len(self.df))
         recent = self.df.tail(lookback)
         hi, lo = recent["high"].max(), recent["low"].min()
         diff = hi - lo
         if diff == 0:
             return None
-
         price = self.c.iloc[-1]
         pos = (hi - price) / diff
-
         if pos > 0.786:
             s, d = 0.7, "Near 78.6% support"
         elif pos > 0.618:
@@ -857,8 +625,7 @@ class IndicatorEngine:
             s, d = -0.3, "Near 23.6%"
         else:
             s, d = -0.6, "Near swing high"
-        return _r("Fibonacci", f"{pos:.1%}", s,
-                  self.cfg["fibonacci"]["w"], d, "price_action")
+        return _r("Fibonacci", f"{pos:.1%}", s, self.cfg["fibonacci"]["w"], d, "price_action")
 
     def _pivot(self):
         if len(self.df) < 3:
@@ -870,18 +637,16 @@ class IndicatorEngine:
         s2 = pp - (prev["high"] - prev["low"])
         r1 = 2 * pp - prev["low"]
         r2 = pp + (prev["high"] - prev["low"])
-
         if price < s2:
-            s, d = 0.7, f"Below S2 ({s2:.4f})"
+            s, d = 0.7, f"Below S2"
         elif price < s1:
-            s, d = 0.4, f"Below S1 ({s1:.4f})"
+            s, d = 0.4, f"Below S1"
         elif price < pp:
-            s, d = 0.15, f"Below Pivot ({pp:.4f})"
+            s, d = 0.15, f"Below Pivot"
         elif price < r1:
-            s, d = -0.15, f"Above Pivot ({pp:.4f})"
+            s, d = -0.15, f"Above Pivot"
         elif price < r2:
-            s, d = -0.4, f"Above R1 ({r1:.4f})"
+            s, d = -0.4, f"Above R1"
         else:
-            s, d = -0.7, f"Above R2 ({r2:.4f})"
-        return _r("Pivot Points", f"PP={pp:.4f}", s,
-                  self.cfg["pivot"]["w"], d, "price_action")
+            s, d = -0.7, f"Above R2"
+        return _r("Pivot Points", f"PP={pp:.4f}", s, self.cfg["pivot"]["w"], d, "price_action")
