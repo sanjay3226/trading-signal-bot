@@ -286,16 +286,7 @@ def analyse_mtf(symbol: str, market: str, primary_tf: str,
 #  SL / TP CALCULATOR
 # ═══════════════════════════════════════
 def compute_levels(df, atr_mult_sl=1.5, atr_mult_tp=2.5):
-    """
-    Calculate suggested Stop Loss and Take Profit levels.
-
-    Uses ATR (Average True Range) to set dynamic levels:
-    - SL = entry ± 1.5 × ATR
-    - TP = entry ± 2.5 × ATR
-
-    This gives a Risk:Reward ratio of 1:1.67 by default.
-    ATR adapts to volatility — volatile markets get wider stops.
-    """
+    import ta as ta_lib
     atr = ta_lib.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
     if atr is None or atr.dropna().empty:
         return None
@@ -313,3 +304,4 @@ def compute_levels(df, atr_mult_sl=1.5, atr_mult_tp=2.5):
         "rr_ratio": round(atr_mult_tp / atr_mult_sl, 2),
 
     }
+
