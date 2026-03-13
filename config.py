@@ -50,9 +50,6 @@ STOCK_ASSETS = [
 # This is the KEY new feature — we confirm signals across
 # multiple timeframes for much higher accuracy
 MTF_MAP = {
-    "1m":  ["5m", "15m"],
-    "5m":  ["15m", "1h"],
-    "15m": ["1h", "4h"],
     "1h":  ["4h", "1d"],
     "4h":  ["1d", "1w"],
     "1d":  ["1w"],
@@ -114,4 +111,5 @@ INDICATOR_CFG = {
 # ─────────── Confidence Tiers ───────────
 TIER_STRONG = 85    # ≥85% → STRONG BUY / STRONG SELL
 TIER_NORMAL = 70    # ≥70% → BUY / SELL
+
 TIER_WEAK   = 55    # ≥55% → WEAK signal
