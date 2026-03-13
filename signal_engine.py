@@ -58,7 +58,7 @@ def aggregate(indicator_results):
         "sell_count": sell_c,
         "neutral_count": neut_c,
         "indicators": sorted_ind,
-        "entry_bias": f"{info['tier']} — {buy_c} buy / {sell_c} sell / {neut_c} neutral ({agree_ratio:.0%} agreement)",
+        "entry_bias": f"{info['tier']} -- {buy_c} buy / {sell_c} sell / {neut_c} neutral ({agree_ratio:.0%} agreement)",
     }
 
 
