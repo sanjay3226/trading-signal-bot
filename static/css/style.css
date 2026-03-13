@@ -1,40 +1,18 @@
-/*
-╔══════════════════════════════════════════════════════════╗
-║  PREMIUM DARK THEME — Trading Signal Bot                 ║
-╚══════════════════════════════════════════════════════════╝
-
-DESIGN PHILOSOPHY:
-──────────────────
-- Deep dark backgrounds (#0a0e17) reduce eye strain during long sessions
-- Accent colours: green (#00d4aa) for buy, red (#ef4444) for sell
-- Subtle glassmorphism effects on cards (backdrop-filter: blur)
-- Smooth 0.3s transitions on everything
-- CSS Grid for responsive layouts
-*/
-
-/* ═══════ RESET & BASE ═══════ */
-*,
-*::before,
-*::after {
+*, *::before, *::after {
     margin: 0;
     padding: 0;
     box-sizing: border-box;
 }
 
 :root {
-    /* Main palette */
     --bg-primary: #0a0e17;
     --bg-secondary: #111827;
     --bg-card: #1a1f2e;
     --bg-card-hover: #222838;
     --bg-elevated: #252b3b;
-
-    /* Text */
     --text-primary: #e2e8f0;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
-
-    /* Accent */
     --green: #00d4aa;
     --green-soft: rgba(0, 212, 170, 0.15);
     --red: #ef4444;
@@ -43,12 +21,8 @@ DESIGN PHILOSOPHY:
     --yellow-soft: rgba(245, 158, 11, 0.15);
     --blue: #3b82f6;
     --purple: #a855f7;
-
-    /* Borders */
     --border: rgba(255, 255, 255, 0.06);
     --border-light: rgba(255, 255, 255, 0.1);
-
-    /* Sizing */
     --radius: 12px;
     --radius-sm: 8px;
     --radius-lg: 16px;
@@ -67,7 +41,6 @@ body {
     overflow-x: hidden;
 }
 
-/* ═══════ NAVBAR ═══════ */
 .navbar {
     display: flex;
     align-items: center;
@@ -149,18 +122,10 @@ body {
 }
 
 @keyframes pulse {
-
-    0%,
-    100% {
-        opacity: 1;
-    }
-
-    50% {
-        opacity: 0.4;
-    }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
 }
 
-/* ═══════ CONTROLS BAR ═══════ */
 .controls-bar {
     display: flex;
     align-items: flex-end;
@@ -198,14 +163,12 @@ select {
     min-width: 140px;
 }
 
-select:hover,
-select:focus {
+select:hover, select:focus {
     border-color: var(--green);
     outline: none;
 }
 
-.btn-analyse,
-.btn-scan {
+.btn-analyse, .btn-scan {
     padding: 8px 22px;
     border: none;
     border-radius: var(--radius-sm);
@@ -258,7 +221,6 @@ select:focus {
     font-size: 1rem;
 }
 
-/* ═══════ MAIN CONTENT ═══════ */
 .main-content {
     padding: 20px 24px;
     position: relative;
@@ -269,7 +231,6 @@ select:focus {
     display: none !important;
 }
 
-/* ═══════ LOADING ═══════ */
 .loading-overlay {
     position: fixed;
     top: 0;
@@ -309,15 +270,12 @@ select:focus {
 }
 
 @keyframes spin {
-    to {
-        transform: rotate(360deg);
-    }
+    to { transform: rotate(360deg); }
 }
 
-/* ═══════ METRICS ROW ═══════ */
 .metrics-row {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
     gap: 12px;
     margin-bottom: 20px;
 }
@@ -350,7 +308,6 @@ select:focus {
     font-family: 'JetBrains Mono', monospace;
 }
 
-/* ═══════ ANALYSIS GRID ═══════ */
 .analysis-grid {
     display: grid;
     grid-template-columns: 2.2fr 1fr;
@@ -358,13 +315,6 @@ select:focus {
     margin-bottom: 20px;
 }
 
-@media (max-width: 1024px) {
-    .analysis-grid {
-        grid-template-columns: 1fr;
-    }
-}
-
-/* ═══════ CARDS ═══════ */
 .card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -411,7 +361,6 @@ select:focus {
     font-style: italic;
 }
 
-/* ═══════ CHART ═══════ */
 .chart-card {
     min-height: 480px;
 }
@@ -423,7 +372,6 @@ select:focus {
     overflow: hidden;
 }
 
-/* ═══════ SIGNAL CARD ═══════ */
 .signal-card {
     border-radius: var(--radius-lg);
     padding: 28px 20px;
@@ -433,18 +381,7 @@ select:focus {
     transition: all 0.5s;
     position: relative;
     overflow: hidden;
-}
-
-.signal-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    opacity: 0.05;
-    border-radius: inherit;
-    transition: all 0.5s;
+    background: var(--bg-card);
 }
 
 .signal-emoji {
@@ -492,14 +429,12 @@ select:focus {
     width: 0%;
 }
 
-/* ═══════ RIGHT PANEL ═══════ */
 .right-panel {
     display: flex;
     flex-direction: column;
     gap: 12px;
 }
 
-/* ═══════ VOTE BARS ═══════ */
 .vote-row {
     display: flex;
     align-items: center;
@@ -535,7 +470,6 @@ select:focus {
     font-weight: 700;
 }
 
-/* ═══════ MTF RESULTS ═══════ */
 .mtf-row {
     display: flex;
     justify-content: space-between;
@@ -562,7 +496,6 @@ select:focus {
     font-size: 0.8rem;
 }
 
-/* ═══════ LEVELS CARD ═══════ */
 .level-row {
     display: flex;
     justify-content: space-between;
@@ -581,7 +514,6 @@ select:focus {
     font-weight: 600;
 }
 
-/* ═══════ EXTRA ROW (patterns + divergences) ═══════ */
 .extra-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -589,14 +521,7 @@ select:focus {
     margin-bottom: 20px;
 }
 
-@media (max-width: 768px) {
-    .extra-row {
-        grid-template-columns: 1fr;
-    }
-}
-
-.pattern-item,
-.divergence-item {
+.pattern-item, .divergence-item {
     display: flex;
     align-items: center;
     gap: 10px;
@@ -606,8 +531,7 @@ select:focus {
     transition: all 0.3s;
 }
 
-.pattern-item:hover,
-.divergence-item:hover {
+.pattern-item:hover, .divergence-item:hover {
     transform: translateX(4px);
 }
 
@@ -627,7 +551,6 @@ select:focus {
     color: var(--text-muted);
 }
 
-/* ═══════ INDICATORS TABLE ═══════ */
 .indicators-card {
     margin-bottom: 20px;
 }
@@ -714,7 +637,6 @@ select:focus {
     color: var(--text-muted);
 }
 
-/* ═══════ SCANNER ═══════ */
 .scanner-strong {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -797,7 +719,6 @@ select:focus {
     background: none;
 }
 
-/* ═══════ FOOTER ═══════ */
 .footer {
     text-align: center;
     padding: 20px 24px;
@@ -806,17 +727,9 @@ select:focus {
     border-top: 1px solid var(--border);
 }
 
-/* ═══════ UTILITY ANIMATIONS ═══════ */
 @keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(10px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .fade-in {
@@ -824,53 +737,50 @@ select:focus {
 }
 
 @keyframes slideUp {
-    from {
-        opacity: 0;
-        transform: translateY(30px);
-    }
-
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
 .slide-up {
     animation: slideUp 0.5s ease forwards;
 }
 
-/* ═══════ RESPONSIVE ═══════ */
+@media (max-width: 1024px) {
+    .analysis-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
 @media (max-width: 768px) {
     .navbar {
         padding: 10px 14px;
     }
-
     .controls-bar {
         padding: 12px 14px;
         gap: 10px;
     }
-
     .main-content {
         padding: 14px;
     }
-
     .analysis-grid {
         grid-template-columns: 1fr;
     }
-
+    .extra-row {
+        grid-template-columns: 1fr;
+    }
     .ind-row {
         grid-template-columns: 100px 60px 1fr 60px;
     }
-
     .ind-desc {
         display: none;
     }
-
     .scan-table-row {
         grid-template-columns: 1fr 1fr 1fr 1fr;
     }
-
-    .scan-table-row> :nth-child(n+5) {
+    .scan-table-row > :nth-child(n+5) {
         display: none;
+    }
+    .metrics-row {
+        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
     }
 }
