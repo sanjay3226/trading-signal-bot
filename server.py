@@ -1,18 +1,30 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import os
 
 app = FastAPI(title="Trading Signal Bot API")
-executor = ThreadPoolExecutor(max_workers=2)
+executor = ThreadPoolExecutor(max_workers=1)
 
-app.mount("/static", StaticFiles(directory="static"), name="static")
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 
 @app.get("/")
 async def root():
-    return FileResponse("static/index.html")
+    return FileResponse(os.path.join(static_dir, "index.html"))
+
+
+@app.head("/")
+async def root_head():
+    return Response(status_code=200)
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok"}
 
 
 def _do_analyse(symbol, market, tf, limit):
@@ -59,7 +71,7 @@ async def analyze(
     symbol: str = Query(...),
     market: str = Query("crypto"),
     tf: str = Query("1h"),
-    limit: int = Query(500),
+    limit: int = Query(300),
 ):
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(executor, _do_analyse, symbol, market, tf, limit)
@@ -70,7 +82,7 @@ async def analyze(
 async def scan(
     market: str = Query("crypto"),
     tf: str = Query("1h"),
-    limit: int = Query(300),
+    limit: int = Query(200),
 ):
     loop = asyncio.get_event_loop()
     results = await loop.run_in_executor(executor, _do_scan, market, tf, limit)
@@ -96,7 +108,7 @@ async def alert_endpoint(
     def _send():
         from signal_engine import analyse_mtf
         from alerts import send_alert
-        result = analyse_mtf(symbol, market, tf, 500)
+        result = analyse_mtf(symbol, market, tf, 300)
         if "error" not in result:
             send_alert(result)
         return result
