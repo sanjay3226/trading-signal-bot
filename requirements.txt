@@ -3,7 +3,7 @@ uvicorn[standard]==0.27.1
 pandas==2.1.4
 numpy==1.26.4
 ccxt==4.2.10
-yfinance>=0.2.46
+yfinance==0.2.36
 requests==2.31.0
 python-dotenv==1.0.1
 ta==0.11.0
