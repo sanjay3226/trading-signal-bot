@@ -242,7 +242,7 @@ def analyse_mtf(symbol: str, market: str, primary_tf: str,
     final_info = classify(final_confidence, primary_verdict["direction"])
 
     # ─── Compute SL/TP ───
-    levels = compute_levels(df)
+    levels = compute_levels(df, primary_tf)
 
     # ─── Build price data for chart ───
     chart_data = []
@@ -285,9 +285,29 @@ def analyse_mtf(symbol: str, market: str, primary_tf: str,
 # ═══════════════════════════════════════
 #  SL / TP CALCULATOR
 # ═══════════════════════════════════════
-def compute_levels(df, atr_mult_sl=1.5, atr_mult_tp=2.5):
+def compute_levels(df, timeframe="1h"):
+    """
+    SL/TP levels adjusted per timeframe.
+    Higher TF = wider stops (more room to breathe)
+    """
     import ta as ta_lib
-    atr = ta_lib.volatility.AverageTrueRange(df["high"], df["low"], df["close"], window=14).average_true_range()
+
+    # Different multipliers per timeframe
+    tf_settings = {
+        "1h":  {"sl": 1.5, "tp": 2.5},
+        "4h":  {"sl": 2.0, "tp": 3.0},
+        "1d":  {"sl": 2.5, "tp": 4.0},
+        "1w":  {"sl": 3.0, "tp": 5.0},
+    }
+
+    settings = tf_settings.get(timeframe, {"sl": 1.5, "tp": 2.5})
+    atr_mult_sl = settings["sl"]
+    atr_mult_tp = settings["tp"]
+
+    atr = ta_lib.volatility.AverageTrueRange(
+        df["high"], df["low"], df["close"], window=14
+    ).average_true_range()
+
     if atr is None or atr.dropna().empty:
         return None
 
@@ -302,6 +322,6 @@ def compute_levels(df, atr_mult_sl=1.5, atr_mult_tp=2.5):
         "short_sl": round(price + atr_mult_sl * atr_v, 6),
         "short_tp": round(price - atr_mult_tp * atr_v, 6),
         "rr_ratio": round(atr_mult_tp / atr_mult_sl, 2),
-
     }
+
 
