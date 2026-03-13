@@ -56,14 +56,11 @@ def fetch_crypto_yfinance(symbol: str, timeframe: str = "1h") -> pd.DataFrame:
         yf_symbol = f"{base}-USD"
 
         tf_map = {
-            "1m":  ("7d", "1m"),
-            "5m":  ("60d", "5m"),
-            "15m": ("60d", "15m"),
-            "1h":  ("2y", "1h"),
-            "4h":  ("2y", "1d"),
-            "1d":  ("5y", "1d"),
-            "1w":  ("10y", "1wk"),
-        }
+       "1h":  ("2y", "1h"),
+       "4h":  ("2y", "1d"),
+       "1d":  ("5y", "1d"),
+       "1w":  ("10y", "1wk"),
+   }
 
         period, interval = tf_map.get(timeframe, ("2y", "1h"))
         tk = yf.Ticker(yf_symbol)
@@ -87,16 +84,12 @@ def fetch_crypto_yfinance(symbol: str, timeframe: str = "1h") -> pd.DataFrame:
 # ═══════════════════════════════════════
 def fetch_yfinance(symbol: str, timeframe: str = "1d") -> pd.DataFrame:
     try:
-        tf_map = {
-            "1m":  ("7d", "1m"),
-            "5m":  ("60d", "5m"),
-            "15m": ("60d", "15m"),
-            "1h":  ("2y", "1h"),
-            "4h":  ("2y", "1d"),
-            "1d":  ("5y", "1d"),
-            "1w":  ("10y", "1wk"),
-        }
-
+         tf_map = {
+       "1h":  ("2y", "1h"),
+       "4h":  ("2y", "1d"),
+       "1d":  ("5y", "1d"),
+       "1w":  ("10y", "1wk"),
+   }
         period, interval = tf_map.get(timeframe, ("1y", "1d"))
         tk = yf.Ticker(symbol)
         df = tk.history(period=period, interval=interval)
@@ -145,3 +138,4 @@ def fetch(symbol: str, market: str, timeframe: str = "1h",
         return fetch_crypto(symbol, timeframe, limit)
     else:
         return fetch_yfinance(symbol, timeframe)
+
